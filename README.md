@@ -1,0 +1,70 @@
+# ClipboardLan - Local Network Clipboard Sharing
+
+ClipboardLan is a browser extension that enables seamless clipboard sharing between multiple devices (Linux, Windows, macOS) on the same local network.
+
+## Features
+
+- Cross-platform clipboard synchronization (Linux, Windows, macOS)
+- Real-time updates across all connected devices
+- Secure local network communication
+- Simple and intuitive interface
+- Preserves formatting of copied content
+## Requirements
+
+
+## Installation
+### 1. Server Setup (Linux)
+
+1. Copy the project folder to your Linux machine
+2. Start the server:
+   ```bash
+   python server/http_server.py
+   ```
+   The server will start on `127.0.0.1:8765` by default.
+
+### 2. Browser Extension Installation
+
+1. Open Chrome/Brave and go to `chrome://extensions/`
+2. Enable "Developer mode" in the top right corner
+3. Click "Load unpacked"
+4. Select the `extension` folder from the project
+
+## Usage
+
+1. Install the extension on each device
+2. On client devices, click the extension icon
+3. Enter the server's IP address (the machine running `http_server.py`)
+4. Click "Connect"
+
+## Troubleshooting
+
+- Ensure the firewall allows traffic on port 8765
+- Verify all devices are on the same local network
+- Check server and extension logs for troubleshooting
+
+## How It Works
+
+1. Copy text on any device (Ctrl+C)
+2. The text will automatically appear in the extension on other connected devices
+3. Click the "Copy" button to copy the text to your clipboard
+
+> **Note:** Currently, only text content is supported (no images or files)
+
+## Project Structure
+
+```
+clipboardlan/
+├── extension/           # Browser extension
+│   ├── manifest.json    # Extension configuration
+│   ├── background.js    # Background script
+│   ├── popup/          # User interface
+│   │   ├── popup.html
+│   │   └── popup.js
+│   └── icons/          # Extension icons
+└── server/             # Python server
+    └── server.py
+```
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
