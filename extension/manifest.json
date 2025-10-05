@@ -4,22 +4,22 @@
   "version": "1.0",
   "description": "Synchronize clipboard history across devices on local network",
   "permissions": [
-    "clipboardWrite", 
-    "clipboardRead", 
+    "clipboardWrite",
+    "clipboardRead",
     "storage",
-    "alarms"
+    "action"
   ],
   "host_permissions": [
     "http://0.0.0.0:24900/*",
     "ws://0.0.0.0:24900/*"
   ],
   "background": {
-    "service_worker": "background.js",
-    "type": "module"
+    "service_worker": "background.js"
   },
   "action": {
     "default_popup": "popup/popup.html",
     "default_icon": {
+      "16": "icons/icon48.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     }

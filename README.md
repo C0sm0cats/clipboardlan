@@ -77,3 +77,11 @@ clipboardlan/
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+## To do list for next release
+Feature extension must retrieve Items even if popup of extension is closed (in background mode)
+Feature sync Items from server with local clipboard on machines running the extension (on demand via button)
+Feature copy files (images, etc ...)
+
+### Done
+Feature ON / OFF status directly seen in icon extension
