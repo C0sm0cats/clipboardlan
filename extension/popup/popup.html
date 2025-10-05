@@ -6,16 +6,17 @@
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --primary-color: #4a6bdf;
-      --primary-hover: #3a56c7;
-      --success-color: #28a745;
-      --danger-color: #dc3545;
-      --text-color: #333;
-      --text-light: #6c757d;
-      --bg-color: #f8f9fa;
+      --primary-color: #2f80ed;
+      --primary-hover: #1a6ed8;
+      --success-color: #27ae60;
+      --danger-color: #e74c3c;
+      --text-color: #2d3436;
+      --text-light: #636e72;
+      --bg-color: #f5f6fa;
       --card-bg: #ffffff;
-      --border-color: #e1e4e8;
-      --shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      --border-color: #dfe6e9;
+      --shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
     }
 
     * {
@@ -25,11 +26,16 @@
     }
 
     body {
-      width: 350px;
-      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      width: 360px;
+      max-height: 600px;
+      overflow-y: auto;
+      font-family: var(--font-sans);
       background-color: var(--bg-color);
       color: var(--text-color);
       line-height: 1.5;
+      font-size: 13px;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }
 
     .container {
@@ -38,28 +44,53 @@
 
     .header {
       display: flex;
+      justify-content: space-between;
       align-items: center;
       margin-bottom: 16px;
       padding-bottom: 12px;
       border-bottom: 1px solid var(--border-color);
     }
+    
+    .header-title {
+      flex: 1;
+    }
+    
+    .status-badge {
+      font-size: 12px;
+      color: var(--text-light);
+      margin-top: 4px;
+      display: block;
+    }
+    
+    .status-badge.connected {
+      color: var(--success-color);
+    }
+    
+    .status-badge.disconnected {
+      color: var(--success-color);
+    }
 
     .header h1 {
-      font-size: 18px;
+      font-size: 16px;
       font-weight: 600;
-      color: var(--primary-color);
+      color: var(--text-color);
+      margin: 0 0 4px 0;
+      letter-spacing: 0.5px;
     }
 
     .input-group {
       background: var(--card-bg);
-      border-radius: 8px;
-      padding: 16px;
-      margin-bottom: 16px;
+      border-radius: 6px;
+      padding: 0 12px 8px 12px;
+      margin-bottom: 12px;
       box-shadow: var(--shadow);
+      border: 1px solid var(--border-color);
     }
 
     .form-row {
-      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      margin: 10px 0 0 0;
     }
 
     .form-row:last-child {
@@ -67,43 +98,61 @@
     }
 
     label {
-      display: block;
-      margin-bottom: 6px;
+      width: 80px;
       font-size: 13px;
       font-weight: 500;
       color: var(--text-color);
+      margin-right: 10px;
+      flex-shrink: 0;
     }
 
     input[type="text"] {
-      width: 100%;
+      flex: 1;
       padding: 8px 12px;
+      background: var(--card-bg);
       border: 1px solid var(--border-color);
       border-radius: 4px;
-      font-size: 14px;
+      font-size: 13px;
+      color: var(--text-color);
       transition: border-color 0.2s;
+      min-width: 0;
     }
 
     input[type="text"]:focus {
       outline: none;
       border-color: var(--primary-color);
-      box-shadow: 0 0 0 2px rgba(74, 107, 223, 0.2);
+      box-shadow: 0 0 0 2px rgba(47, 128, 237, 0.2);
     }
 
     button {
-      background-color: var(--primary-color);
+      background: var(--primary-color);
       color: white;
       border: none;
       border-radius: 4px;
-      padding: 10px 16px;
-      font-size: 14px;
+      padding: 6px 12px;
+      font-size: 12px;
       font-weight: 500;
       cursor: pointer;
-      width: 100%;
-      transition: background-color 0.2s, transform 0.1s;
+      transition: all 0.2s;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
+      gap: 6px;
+      white-space: nowrap;
+    }
+    
+    #connectBtn {
+      width: 100%;
+      margin-top: 10px;
+    }
+    
+    #disconnectBtn {
+      background: var(--primary-color);
+      margin-left: 10px;
+    }
+    
+    #disconnectBtn:hover {
+      background: var(--primary-hover);
     }
 
     button:hover {
@@ -125,46 +174,18 @@
     }
 
     #status {
-      padding: 10px 12px;
-      border-radius: 4px;
-      font-size: 13px;
-      margin-bottom: 16px;
-      display: flex;
-      align-items: center;
-    }
-
-    #status::before {
-      content: '';
-      display: inline-block;
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      margin-right: 8px;
-    }
-
-    #status.connected {
-      background-color: rgba(40, 167, 69, 0.1);
-      color: var(--success-color);
-    }
-
-    #status.connected::before {
-      background-color: var(--success-color);
-    }
-
-    #status.disconnected {
-      background-color: rgba(220, 53, 69, 0.1);
-      color: var(--danger-color);
-    }
-
-    #status.disconnected::before {
-      background-color: var(--danger-color);
+      font-size: 12px;
+      padding: 2px 8px;
+      border-radius: 10px;
     }
 
     .history-container {
       background: var(--card-bg);
-      border-radius: 8px;
+      border-radius: 6px;
       box-shadow: var(--shadow);
       overflow: hidden;
+      border: 1px solid var(--border-color);
+      max-height: 400px;
     }
 
     .history-header {
@@ -173,6 +194,7 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
+      background: var(--card-bg);
     }
 
     .history-header h2 {
@@ -205,15 +227,15 @@
       justify-content: space-between;
       font-size: 11px;
       color: var(--text-light);
-      margin-bottom: 6px;
+      margin-bottom: 4px;
     }
 
     .history-content-text {
-      font-size: 13px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      margin-bottom: 8px;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      margin: 6px 0;
+      line-height: 1.5;
     }
 
     .history-actions {
@@ -283,17 +305,35 @@
       text-align: right;
     }
     .copy-btn {
-      background: var(--primary-color);
-      color: white;
-      border: none;
+      background: transparent;
+      color: var(--primary-color);
+      border: 1px solid var(--primary-color);
       border-radius: 4px;
-      padding: 4px 8px;
-      font-size: 12px;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-family: var(--font-mono);
       cursor: pointer;
-      transition: background-color 0.2s;
+      transition: all 0.25s cubic-bezier(0.645, 0.045, 0.355, 1);
+      position: relative;
+      overflow: hidden;
+      z-index: 1;
+    }
+    .copy-btn::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 0;
+      height: 100%;
+      background: var(--primary-color);
+      transition: width 0.3s ease;
+      z-index: -1;
     }
     .copy-btn:hover {
-      background-color: var(--primary-hover);
+      color: var(--bg-color);
+    }
+    .copy-btn:hover::before {
+      width: 100%;
     }
     .copy-btn:active {
       transform: translateY(1px);
@@ -330,28 +370,39 @@
     }
 
     .source-badge {
-      background-color: var(--primary-color);
-      color: white;
-      padding: 2px 6px;
+      background-color: #f1f3f5;
+      color: var(--text-light);
+      padding: 1px 6px;
       border-radius: 3px;
       font-size: 10px;
       font-weight: 500;
-      margin-left: 8px;
+      margin-left: 6px;
     }
 
     .source-badge.server {
-      background-color: #28a745;
+      background-color: #e3f9e5;
+      color: var(--success-color);
     }
 
     .source-badge.local {
-      background-color: var(--primary-color);
+      background-color: #e3f0ff;
+      color: var(--primary-color);
     }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="header">
-      <h1>Clipboard Lan</h1>
+      <div class="header-title">
+        <h1>Clipboard Lan</h1>
+        <div id="status" class="status-badge">Disconnected - Ready for new connection</div>
+      </div>
+      <button id="disconnectBtn" style="display: none;">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" width="14" height="14">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+        </svg>
+        <span>Disconnect</span>
+      </button>
     </div>
     
     <div class="input-group">
@@ -364,15 +415,11 @@
         <input type="text" id="serverPort" placeholder="24900">
       </div>
       <button id="connectBtn">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" width="14" height="14">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 3.293a1 1 0 011.415 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.415-1.414L14.586 12 8.684 6.293a1 1 0 010-1.414z" />
         </svg>
         <span>Connect</span>
       </button>
-    </div>
-    
-    <div id="status">
-      Status: Disconnected
     </div>
     
     <div class="history-container">

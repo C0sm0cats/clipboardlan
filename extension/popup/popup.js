@@ -12,19 +12,23 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Update UI based on connection state
   async function updateStatus(message, success) {
     console.log(`Updating status: ${message} (${success ? 'connected' : 'disconnected'})`);
-    statusElement.innerHTML = `<span class="status-indicator ${success ? 'connected' : 'disconnected'}"></span> ${message}`;
-    connectBtn.textContent = success ? 'Disconnect' : 'Connect';
+    statusElement.textContent = message;
+    statusElement.className = `status-badge ${success ? 'connected' : 'disconnected'}`;
     isConnected = success;
 
-    const displayValue = success ? 'none' : 'block';
-    serverIpInput.style.display = displayValue;
-    serverPortInput.style.display = displayValue;
-
-    document.querySelectorAll('label').forEach(label => {
-      if (label.getAttribute('for') === 'serverIp' || label.getAttribute('for') === 'serverPort') {
-        label.style.display = displayValue;
-      }
-    });
+    // Show/hide form elements
+    const formDisplay = success ? 'none' : 'flex';
+    const disconnectBtn = document.getElementById('disconnectBtn');
+    
+    // Toggle form elements
+    serverIpInput.closest('.form-row').style.display = formDisplay;
+    serverPortInput.closest('.form-row').style.display = formDisplay;
+    connectBtn.style.display = success ? 'none' : 'flex';
+    
+    // Toggle disconnect button
+    if (disconnectBtn) {
+      disconnectBtn.style.display = success ? 'flex' : 'none';
+    }
 
     await chrome.storage.local.set({ isConnected: success });
   }
@@ -109,7 +113,14 @@ document.addEventListener('DOMContentLoaded', async () => {
           console.error('Error getting connection status:', chrome.runtime.lastError);
           reject(chrome.runtime.lastError);
         } else {
-          resolve(response || { connected: false });
+          // Récupérer les informations de connexion du stockage
+          chrome.storage.local.get(['serverIp', 'serverPort'], (savedState) => {
+            resolve({
+              connected: (response && response.connected) || false,
+              serverIp: savedState.serverIp,
+              serverPort: savedState.serverPort
+            });
+          });
         }
       });
     });
@@ -136,12 +147,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       isConnected = savedState.isConnected === true && connectionStatus.connected;
       console.log('Determined isConnected:', isConnected);
 
-      // Sync storage with actual connection status
-      await chrome.storage.local.set({ isConnected });
-
-      // Update UI with server info when connected
+      // Always update status with the most current information
       if (isConnected) {
-        updateStatus(`Connected to ${savedState.serverIp || 'server'}:${savedState.serverPort || '24900'}`, true);
+        // Use the most current server info available
+        const ip = connectionStatus.serverIp || savedState.serverIp || 'server';
+        const port = connectionStatus.serverPort || savedState.serverPort || '';
+        const serverInfo = `Connected to ${ip}${port ? ':' + port : ''}`;
+        updateStatus(serverInfo, true);
       } else {
         updateStatus('Enter Server IP & Port, then click Connect', false);
       }
@@ -224,8 +236,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  connectBtn.addEventListener('click', toggleConnection);
+  // Initialize
+  init();
 
+  // Event listeners
+  connectBtn.addEventListener('click', toggleConnection);
+  document.getElementById('disconnectBtn')?.addEventListener('click', toggleConnection);
+  
+  // Clipboard monitoring
   setInterval(async () => {
     try {
       if (navigator.clipboard && navigator.clipboard.readText) {

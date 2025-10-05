@@ -69,9 +69,33 @@ function updateConnectionStatus(connected, message = '') {
       pingInterval = null;
     }
   }
+  
+  // Toujours essayer d'utiliser les informations de connexion les plus récentes
+  chrome.storage.local.get(['serverIp', 'serverPort'], (result) => {
+    let statusMessage = message;
+    
+    // Si pas de message personnalisé, en créer un
+    if (!statusMessage) {
+      statusMessage = connected ? 'Connected to server' : 'Disconnected from server';
+    }
+    
+    // Si connecté et qu'on a des infos de connexion, les ajouter au message
+    if (connected && result.serverIp && result.serverPort) {
+      // Si le message ne contient pas déjà l'IP et le port, les ajouter
+      if (!statusMessage.includes(result.serverIp) || !statusMessage.includes(result.serverPort)) {
+        statusMessage = `Connected to ${result.serverIp}:${result.serverPort}`;
+      }
+    }
+    
+    // Envoyer la mise à jour avec le message final
+    sendStatusUpdate(connected, statusMessage);
+  });
+}
+
+function sendStatusUpdate(connected, message) {
   chrome.runtime.sendMessage({
     type: 'STATUS_UPDATE',
-    message: message || (connected ? 'Connected to server' : 'Disconnected from server'),
+    message: message,
     success: connected
   }).catch(error => {
     if (error.message !== 'Could not establish connection. Receiving end does not exist.') {
@@ -101,6 +125,11 @@ function attemptWebSocketConnection(serverIp, serverPort) {
     socket = null;
   }
 
+  // Sauvegarder les informations de connexion avant d'établir la connexion
+  chrome.storage.local.set({ serverIp, serverPort }, () => {
+    console.log('🔑 Informations de connexion sauvegardées:', { serverIp, serverPort });
+  });
+
   const wsUrl = `ws://${serverIp}:${serverPort}/ws`;
   console.log('🔗 Tentative de connexion WebSocket vers:', wsUrl);
 
@@ -121,7 +150,15 @@ function attemptWebSocketConnection(serverIp, serverPort) {
       clearTimeout(connectionTimeout);
       console.log('✅ Connexion WebSocket établie avec succès');
       setupPing();
-      updateConnectionStatus(true);
+      
+      // Mettre à jour le statut avec les informations de connexion actuelles
+      // On utilise directement les variables serverIp et serverPort qui viennent d'être utilisées pour la connexion
+      const statusMessage = `Connected to ${serverIp}:${serverPort}`;
+      updateConnectionStatus(true, statusMessage);
+      
+      // Sauvegarder l'état de connexion
+      chrome.storage.local.set({ isConnected: true });
+      
       if (socket.readyState === WebSocket.OPEN) {
         try {
           socket.send(JSON.stringify({ type: 'get_history' }));
@@ -203,37 +240,24 @@ function attemptWebSocketConnection(serverIp, serverPort) {
 
 function handleReconnection(serverIp, serverPort) {
   if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-    console.error(`❌ Nombre maximum de tentatives de reconnexion (${MAX_RECONNECT_ATTEMPTS}) atteint`);
-    updateConnectionStatus(false, `Failed to reconnect after ${MAX_RECONNECT_ATTEMPTS} attempts`);
+    const errorMessage = `Failed to connect to ${serverIp}:${serverPort} after ${MAX_RECONNECT_ATTEMPTS} attempts`;
+    console.error(`❌ ${errorMessage}`);
+    updateConnectionStatus(false, errorMessage);
     return;
   }
 
   const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
-  reconnectAttempts++;
-  console.log(`🔄 Tentative de reconnexion ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} dans ${delay}ms...`);
-  updateConnectionStatus(false, `Attempting to reconnect (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
+  console.log(`⏳ Tentative de reconnexion dans ${delay/1000} secondes... (${reconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS})`);
+  
+  // Mettre à jour le statut avec les infos de connexion
+  const statusMessage = `Reconnecting to ${serverIp}:${serverPort}...`;
+  updateConnectionStatus(false, statusMessage);
+  
   reconnectTimeout = setTimeout(() => {
-    console.log(`🔄 Tentative de reconnexion en cours (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
     attemptWebSocketConnection(serverIp, serverPort);
   }, delay);
-}
-
-function cleanupConnection() {
-  if (socket) {
-    socket.close(1000, 'User disconnect');
-    socket = null;
-  }
-  if (pingInterval) {
-    clearInterval(pingInterval);
-    pingInterval = null;
-  }
-  if (reconnectTimeout) {
-    clearTimeout(reconnectTimeout);
-    reconnectTimeout = null;
-  }
-  isConnected = false;
-  reconnectAttempts = 0;
-  updateConnectionStatus(false);
+  
+  reconnectAttempts++;
 }
 
 chrome.runtime.onSuspend.addListener(() => {
