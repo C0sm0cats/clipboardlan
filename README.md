@@ -20,7 +20,7 @@ ClipboardLan is a browser extension that enables seamless clipboard sharing betw
    ```bash
    python server/http_server.py
    ```
-   The server will start on `127.0.0.1:8765` by default.
+   The server will start on `0.0.0.0:24900` by default.
 
 ### 2. Browser Extension Installation
 
@@ -38,7 +38,7 @@ ClipboardLan is a browser extension that enables seamless clipboard sharing betw
 
 ## Troubleshooting
 
-- Ensure the firewall allows traffic on port 8765
+- Ensure the firewall allows traffic on port 24900
 - Verify all devices are on the same local network
 - Check server and extension logs for troubleshooting
 

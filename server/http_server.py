@@ -1,4 +1,5 @@
 from aiohttp import web
+from aiohttp.web import middleware
 import asyncio
 import json
 import logging
@@ -159,9 +160,17 @@ class ClipboardServer:
             
         return ws
 
+@middleware
+async def cors_middleware(request, handler):
+    response = await handler(request)
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    return response
+
 async def create_app():
     # Configuration du serveur avec des timeouts plus longs
-    app = web.Application(client_max_size=1024*1024*10)  # 10MB max pour les messages
+    app = web.Application(middlewares=[cors_middleware], client_max_size=1024*1024*10)
     
     # Configuration des timeouts
     app['websocket_timeout'] = 300  # 5 minutes
@@ -181,10 +190,10 @@ async def create_app():
         'websocket_timeout': '300s',
         'keepalive': 'enabled'
     }))
-    logger.info("🚀 Serveur HTTP WebSocket démarré sur http://127.0.0.1:8765")
-    logger.info("📡 WebSocket endpoint: ws://127.0.0.1:8765/ws")
-    logger.info("🏥 Health endpoint: http://127.0.0.1:8765/health")
-    logger.info("🏠 Root endpoint: http://127.0.0.1:8765/")
+    logger.info("🚀 Serveur HTTP WebSocket démarré sur http://0.0.0.0:24900")
+    logger.info("📡 WebSocket endpoint: ws://0.0.0.0:24900/ws")
+    logger.info("🏥 Health endpoint: http://0.0.0.0:24900/health")
+    logger.info("🏠 Root endpoint: http://0.0.0.0:24900/")
     return app
 
 if __name__ == '__main__':
@@ -194,8 +203,8 @@ if __name__ == '__main__':
     # Configuration du serveur avec des timeouts plus longs
     web.run_app(
         app,
-        host='127.0.0.1',
-        port=8765,
+        host='0.0.0.0',
+        port=24900,
         keepalive_timeout=300,  # 5 minutes
         ssl_context=None
     )

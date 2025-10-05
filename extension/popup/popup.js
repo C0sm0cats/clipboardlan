@@ -141,7 +141,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       // Update UI with server info when connected
       if (isConnected) {
-        updateStatus(`Connected to ${savedState.serverIp || 'server'}:${savedState.serverPort || '8765'}`, true);
+        updateStatus(`Connected to ${savedState.serverIp || 'server'}:${savedState.serverPort || '24900'}`, true);
       } else {
         updateStatus('Enter Server IP & Port, then click Connect', false);
       }
@@ -157,8 +157,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function toggleConnection() {
-    const serverIp = serverIpInput.value.trim() || '127.0.0.1';
-    const serverPort = serverPortInput.value.trim() || '8765';
+    const serverIp = serverIpInput.value.trim() || '0.0.0.0';
+    const serverPort = serverPortInput.value.trim() || '24900';
 
     await chrome.storage.local.set({ serverIp, serverPort });
 

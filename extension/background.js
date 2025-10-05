@@ -267,8 +267,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return true;
 
     case 'CONNECT':
-      const serverIp = request.ip || '127.0.0.1';
-      const serverPort = request.port || '8765';
+      const serverIp = request.ip || '0.0.0.0';
+      const serverPort = request.port || '24900';
       console.log('🔍 Testing server connectivity first...');
       fetch(`http://${serverIp}:${serverPort}/health`)
         .then(response => {

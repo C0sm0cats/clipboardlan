@@ -10,8 +10,8 @@
     "alarms"
   ],
   "host_permissions": [
-    "http://127.0.0.1:8765/*",
-    "ws://127.0.0.1:8765/*"
+    "http://0.0.0.0:24900/*",
+    "ws://0.0.0.0:24900/*"
   ],
   "background": {
     "service_worker": "background.js",
