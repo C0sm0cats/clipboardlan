@@ -60,15 +60,18 @@ ClipboardLan is a browser extension that enables seamless clipboard sharing betw
 
 ```
 clipboardlan/
-├── extension/           # Browser extension
-│   ├── manifest.json    # Extension configuration
-│   ├── background.js    # Background script
-│   ├── popup/          # User interface
-│   │   ├── popup.html
-│   │   └── popup.js
-│   └── icons/          # Extension icons
-└── server/             # Python server
-    └── server.py
+├── extension/              # Browser extension files
+│   ├── icons/             # Extension icons
+│   │   ├── icon48.png     # 48x48 icon
+│   │   └── icon128.png    # 128x128 icon
+│   ├── popup/             # Popup interface
+│   │   ├── popup.html     # Popup HTML
+│   │   └── popup.js       # Popup JavaScript
+│   ├── background.js      # Background service worker
+│   ├── content.js         # Content script for clipboard detection
+│   └── manifest.json      # Extension manifest
+└── server/                # Server files
+    └── http_server.py     # Python WebSocket server
 ```
 
 ## License
