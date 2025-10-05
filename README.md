@@ -38,9 +38,15 @@ ClipboardLan is a browser extension that enables seamless clipboard sharing betw
 
 ## Troubleshooting
 
-- Ensure the firewall allows traffic on port 24900
-- Verify all devices are on the same local network
-- Check server and extension logs for troubleshooting
+- **Firewall Configuration**:
+  - On the server machine, allow incoming TCP connections on port 24900
+
+- **Network**:
+  - Ensure all devices are on the same local network
+
+- **Logs**:
+  - Check server logs for connection attempts
+  - Check browser's developer console (F12 > Console) for WebSocket errors
 
 ## How It Works
 
