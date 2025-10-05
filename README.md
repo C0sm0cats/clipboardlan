@@ -60,7 +60,7 @@ ClipboardLan is a browser extension that enables seamless clipboard sharing betw
 
 ```
 clipboardlan/
-├── extension/              # Browser extension files
+├── extension/             # Browser extension files
 │   ├── icons/             # Extension icons
 │   │   ├── icon48.png     # 48x48 icon
 │   │   └── icon128.png    # 128x128 icon
