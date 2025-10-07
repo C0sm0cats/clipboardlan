@@ -11,7 +11,8 @@ logger = logging.getLogger('HTTPClipboardServer')
 
 class ClipboardServer:
     def __init__(self, loop=None):
-        self.clients = set()
+        self.clients = {}  # Dictionnaire pour stocker les clients avec leur ID
+        self.client_info = {}  # Dictionnaire pour stocker les infos des clients (adresse IP, ID machine, etc.)
         self.clipboard_content = ""
         self.history = []
         self.max_history = 3
@@ -42,9 +43,10 @@ class ClipboardServer:
 
     async def _cleanup_closed_clients(self):
         """Nettoie les clients déconnectés"""
-        closed_clients = [c for c in self.clients if c.closed]
-        for client in closed_clients:
-            self.clients.discard(client)
+        closed_clients = [client_id for client_id, client in self.clients.items() if client.closed]
+        for client_id in closed_clients:
+            self.clients.pop(client_id, None)
+            self.client_info.pop(client_id, None)
         if closed_clients:
             logger.info(f"🗑️ {len(closed_clients)} clients déconnectés nettoyés")
 
@@ -102,38 +104,58 @@ class ClipboardServer:
             logger.critical(f"❌ Erreur fatale dans la boucle de vérification: {str(e)}", 
                           exc_info=True)
             raise
-    async def broadcast_update(self):
+    async def broadcast_update(self, origin_client_id=None):
         """Diffuse la mise à jour du presse-papiers à tous les clients connectés"""
         if not self.clipboard_content:
             logger.debug("Aucun contenu à diffuser")
             return
 
         try:
+            # Préparer l'historique pour l'envoi
+            history_to_send = []
+            for item in self.history:
+                # Gérer le timestamp qu'il soit une chaîne ou un objet datetime
+                timestamp = item.get('timestamp')
+                if hasattr(timestamp, 'isoformat'):
+                    timestamp_str = timestamp.isoformat()
+                else:
+                    # Si c'est déjà une chaîne, l'utiliser directement
+                    timestamp_str = str(timestamp) if timestamp is not None else datetime.now().isoformat()
+                
+                history_to_send.append({
+                    'content': item.get('content', ''),
+                    'timestamp': timestamp_str,
+                    'machine_id': item.get('machine_id', 'unknown'),
+                    'hostname': item.get('hostname', 'Unknown'),
+                    'source': item.get('source', 'unknown')
+                })
+            
             message = {
                 'type': 'clipboard_update',
                 'content': self.clipboard_content,
-                'history': [
-                    {
-                        'content': item['content'], 
-                        'timestamp': item['timestamp'].isoformat()
-                    } 
-                    for item in self.history
-                ]
+                'history': history_to_send
             }
+            
+            # Ajouter l'ID de la machine d'origine si disponible
+            if origin_client_id:
+                message['origin_machine_id'] = origin_client_id
             
             clients_to_remove = set()
             active_clients = 0
             
             # Préparer les tâches d'envoi
             send_tasks = []
-            for client in list(self.clients):
-                if client.closed:
-                    clients_to_remove.add(client)
+            for client_id, client_ws in list(self.clients.items()):
+                if client_ws.closed:
+                    clients_to_remove.add(client_ws)
                     continue
                     
-                async def send_to_client(ws):
+                async def send_to_client(ws, cid):
                     try:
-                        await ws.send_json(message)
+                        # Ajouter l'ID de la machine d'origine au message
+                        client_message = message.copy()
+                        client_message['current_machine_id'] = cid
+                        await ws.send_json(client_message)
                         return True
                     except Exception as e:
                         client_address = ws._req.remote if hasattr(ws, '_req') and hasattr(ws._req, 'remote') else 'client inconnu'
@@ -141,7 +163,7 @@ class ClipboardServer:
                         clients_to_remove.add(ws)
                         return False
                 
-                send_tasks.append(send_to_client(client))
+                send_tasks.append(send_to_client(client_ws, client_id))
             
             # Exécuter les envois en parallèle
             if send_tasks:
@@ -151,61 +173,96 @@ class ClipboardServer:
             # Nettoyer les clients déconnectés
             if clients_to_remove:
                 before = len(self.clients)
-                self.clients -= clients_to_remove
+                for client_id in clients_to_remove:
+                    self.clients.pop(client_id, None)
+                    self.client_info.pop(client_id, None)
                 logger.info(f"🗑️ Nettoyage de {len(clients_to_remove)} clients déconnectés")
-            
-            logger.info(f"📡 Mise à jour diffusée à {active_clients} clients")
+                
+            return active_clients
             
         except Exception as e:
-            logger.error(f"❌ Erreur lors de la diffusion: {e}", exc_info=True)
-
+            return 0
+    
     async def websocket_handler(self, request):
         """Gère les connexions WebSocket entrantes"""
         ws = web.WebSocketResponse(
-            timeout=300,  # 5 minutes d'inactivité
-            receive_timeout=300,  # 5 minutes
-            heartbeat=30,  # Ping toutes les 30 secondes
-            max_msg_size=10 * 1024 * 1024,  # 10MB
+            heartbeat=30.0,
+            max_msg_size=10*1024*1024,  # 10MB max
+            timeout=300.0,  # 5 minutes
             autoping=True,
-            autoclose=True
+            receive_timeout=300.0
         )
         
-        # Nettoyer les connexions fermées
-        self.clients = {c for c in self.clients if not c.closed}
+        # Générer un ID unique pour ce client
+        client_id = f"{request.remote}_{id(ws)}"
         
         try:
             await ws.prepare(request)
-            self.clients.add(ws)
             
-            client_info = f"{request.remote} (total: {len(self.clients)})"
-            logger.info(f"🔗 Connexion établie: {client_info}")
+            # Ajouter le client aux listes
+            self.clients[client_id] = ws
+            self.client_info[client_id] = {
+                'ip': request.remote,
+                'connected_at': datetime.now().isoformat(),
+                'last_seen': datetime.now().isoformat()
+            }
+            
+            logger.info(f"🔗 Connexion établie: {request.remote} (ID: {client_id[:8]}...)")
             
             # Envoyer l'état initial
             try:
                 if self.clipboard_content:
+                    # Préparer l'historique pour l'envoi initial
+                    history_to_send = []
+                    for item in self.history:
+                        # Gérer le timestamp qu'il soit une chaîne ou un objet datetime
+                        timestamp = item.get('timestamp')
+                        if hasattr(timestamp, 'isoformat'):
+                            timestamp_str = timestamp.isoformat()
+                        else:
+                            timestamp_str = str(timestamp) if timestamp is not None else datetime.now().isoformat()
+                        
+                        history_to_send.append({
+                            'content': item.get('content', ''),
+                            'timestamp': timestamp_str,
+                            'machine_id': item.get('machine_id', 'unknown'),
+                            'hostname': item.get('hostname', 'Unknown'),
+                            'source': item.get('source', 'unknown')
+                        })
+                    
                     initial_msg = {
                         'type': 'clipboard_update',
                         'content': self.clipboard_content,
-                        'history': [
-                            {'content': item['content'], 
-                             'timestamp': item['timestamp'].isoformat()}
-                            for item in self.history
-                        ]
+                        'history': history_to_send,
+                        'client_id': client_id
                     }
                     await ws.send_json(initial_msg)
                     logger.debug(f"📤 État initial envoyé à {request.remote}")
                 else:
                     await ws.send_json({
                         'type': 'status', 
-                        'message': 'Bienvenue, prêt à synchroniser le presse-papier'
+                        'message': 'Bienvenue, prêt à synchroniser le presse-papier',
+                        'client_id': client_id
                     })
+                
+                # Envoyer également les informations de connexion actuelles
+                await ws.send_json({
+                    'type': 'connection_info',
+                    'status': 'connected',
+                    'client_id': client_id,
+                    'server_time': datetime.now().isoformat()
+                })
+                
             except Exception as e:
-                logger.error(f"❌ Erreur envoi état initial à {request.remote}: {e}")
+                logger.error(f"❌ Erreur envoi état initial à {request.remote}: {e}", exc_info=True)
             
             # Boucle de réception des messages
             async for msg in ws:
                 if msg.type == web.WSMsgType.TEXT:
-                    await self._handle_websocket_message(ws, msg)
+                    # Mettre à jour le last_seen
+                    if client_id in self.client_info:
+                        self.client_info[client_id]['last_seen'] = datetime.now().isoformat()
+                    await self._handle_websocket_message(ws, msg, client_id)
                 elif msg.type == web.WSMsgType.ERROR:
                     logger.error(f"❌ Erreur WebSocket avec {request.remote}: {ws.exception()}")
                     break
@@ -228,49 +285,134 @@ class ClipboardServer:
                 except Exception as e:
                     logger.error(f"❌ Erreur lors de la fermeture de la connexion: {e}")
             
-            self.clients.discard(ws)
+            # Supprimer le client des listes
+            self.clients.pop(client_id, None)
+            self.client_info.pop(client_id, None)
+            
             logger.info(f"👋 Déconnecté: {request.remote} (restants: {len(self.clients)})")
             
         return ws
         
-    async def _handle_websocket_message(self, ws, msg):
+    async def _handle_websocket_message(self, ws, msg, client_id=None):
         """Traite un message WebSocket entrant"""
         try:
             data = json.loads(msg.data)
             msg_type = data.get('type', 'unknown')
-            client_address = ws._req.remote if hasattr(ws, '_req') and hasattr(ws._req, 'remote') else 'client inconnu'
-            logger.debug(f" Message {msg_type} de {client_address}")
             
-            if msg_type == 'clipboard_update':
-                await self._process_clipboard_update(data, client_address)
+            # Obtenir les infos du client
+            client_info = self.client_info.get(client_id, {})
+            client_ip = client_info.get('ip', 'inconnu')
+            
+            logger.debug(f"📥 Message {msg_type} reçu de {client_ip} (ID: {client_id[:8] if client_id else 'inconnu'})")
+            logger.debug(f"📋 Contenu du message: {json.dumps(data, ensure_ascii=False)[:200]}...")
+            
+            if msg_type == 'client_identify':
+                # Mettre à jour les informations du client
+                if client_id:
+                    self.client_info[client_id].update({
+                        'machine_id': data.get('machine_id', client_id),
+                        'hostname': data.get('hostname', 'Unknown'),
+                        'user_agent': data.get('user_agent', 'Unknown'),
+                        'last_seen': datetime.now().isoformat()
+                    })
+                    logger.info(f"🆔 Client identifié: {self.client_info[client_id]['hostname']} ({client_id[:8]}...)")
+                    
+                    # Envoyer un accueil personnalisé
+                    welcome_msg = {
+                        'type': 'status',
+                        'message': f'Connecté en tant que {self.client_info[client_id]["hostname"]}'
+                    }
+                    await ws.send_json(welcome_msg)
+                    
+            elif msg_type == 'clipboard_update':
+                logger.info(f"📋 Mise à jour du presse-papiers reçue de {client_ip} (ID: {client_id[:8] if client_id else 'inconnu'})")
+                logger.debug(f"📋 Données brutes: {data}")
                 
-        except json.JSONDecodeError:
-            client_address = ws._req.remote if hasattr(ws, '_req') and hasattr(ws._req, 'remote') else 'client inconnu'
-            logger.error(f" Message JSON invalide de {client_address}: {msg.data[:100]}")
+                # Ajouter les infos de la machine d'origine
+                if client_id and client_id in self.client_info:
+                    # Toujours utiliser le hostname du client s'il est disponible
+                    client_hostname = self.client_info[client_id].get('hostname', 'Unknown')
+                    
+                    logger.debug(f"🔍 Client trouvé: ID={client_id}, Hostname={client_hostname}")
+                    
+                    # Mettre à jour les données avec les informations du client
+                    data.update({
+                        'machine_id': client_id,
+                        'hostname': client_hostname,
+                        'source': 'remote',
+                        'timestamp': datetime.now().isoformat()
+                    })
+                else:
+                    logger.warning(f"⚠️ Client non trouvé pour l'ID: {client_id}")
+                
+                # Traiter la mise à jour du presse-papiers
+                logger.debug("🔄 Traitement de la mise à jour du presse-papiers...")
+                await self._process_clipboard_update(data, client_ip)
+                logger.info("✅ Mise à jour du presse-papiers traitée avec succès")
+                
+        except json.JSONDecodeError as e:
+            logger.error(f" Message JSON invalide de {client_ip}: {msg.data[:100]}")
         except Exception as e:
-            logger.error(f" Erreur traitement message de {client_address}: {e}", exc_info=True)
+            logger.error(f" Erreur traitement message de {client_ip}: {str(e)}")
+            logger.debug("Détails de l'erreur:", exc_info=True)
     
     async def _process_clipboard_update(self, data, remote):
         """Traite une mise à jour du presse-papiers"""
         try:
+            logger.debug(f"🔧 Traitement de la mise à jour du presse-papiers de {remote}")
+            logger.debug(f"📄 Données reçues: {json.dumps(data, ensure_ascii=False)[:500]}...")
+            
             if 'content' not in data:
+                logger.warning(f"⚠️ Mise à jour du presse-papiers sans contenu reçue de {remote}")
                 return
                 
-            self.clipboard_content = data['content']
-            self.history.insert(0, {
-                'content': self.clipboard_content,
-                'timestamp': datetime.now()
-            })
+            logger.debug(f"📝 Contenu reçu (longueur: {len(str(data.get('content', '')))})")
             
-            # Limiter l'historique
+            # Préparer l'élément avec des valeurs par défaut cohérentes
+            timestamp = data.get('timestamp')
+            if not timestamp:
+                timestamp = datetime.now().isoformat()
+            
+            # Créer le nouvel élément avec toutes les métadonnées disponibles
+            new_item = {
+                'content': data['content'],
+                'timestamp': timestamp,
+                'machine_id': data.get('machine_id', 'unknown'),
+                'hostname': data.get('hostname', 'Unknown'),
+                'source': data.get('source', 'unknown'),
+                'remote': remote
+            }
+            
+            # Mettre à jour le contenu du presse-papiers
+            self.clipboard_content = data['content']
+            
+            # Ajouter à l'historique
+            self.history.insert(0, new_item)
+            
+            # Limiter la taille de l'historique
             if hasattr(self, 'max_history') and len(self.history) > self.max_history:
                 self.history = self.history[:self.max_history]
                 
-            # Diffuser la mise à jour
+            # Diffuser la mise à jour à tous les clients connectés
+            logger.debug("📢 Diffusion de la mise à jour à tous les clients...")
             await self.broadcast_update()
+            logger.debug("✅ Mise à jour diffusée avec succès")
+            
+            logger.info(f"📋 Presse-papiers mis à jour par {new_item.get('hostname', 'unknown')} ({remote})")
+            logger.debug(f"📋 Nouveau contenu: {str(new_item.get('content', ''))[:100]}...")
             
         except Exception as e:
-            logger.error(f"❌ Erreur traitement mise à jour de {remote}: {e}", exc_info=True)
+            logger.error(f"❌ Erreur lors du traitement de la mise à jour du presse-papiers de {remote}: {e}", exc_info=True)
+            
+    async def handle_hostname(self, request):
+        """Renvoie le nom d'hôte du serveur"""
+        import socket
+        hostname = socket.gethostname()
+        return web.json_response({
+            'hostname': hostname,
+            'fqdn': socket.getfqdn(),
+            'ip': socket.gethostbyname(hostname)
+        })
 
 @middleware
 async def cors_middleware(request, handler):
@@ -282,11 +424,16 @@ async def cors_middleware(request, handler):
 
 async def create_app(loop=None):
     # Configuration du serveur avec des timeouts plus longs
-    app = web.Application(middlewares=[cors_middleware], client_max_size=1024*1024*10, loop=loop)
+    app = web.Application(middlewares=[cors_middleware],
+                         client_max_size=1024*1024*10,
+                         loop=loop)
     
-    # Configuration des timeouts
+    # Configuration des timeouts et tailles maximales
+    app['client_timeout'] = 300  # 5 minutes
     app['websocket_timeout'] = 300  # 5 minutes
     app['keepalive_timeout'] = 300  # 5 minutes
+    app['ping_interval'] = 30  # Envoi d'un ping toutes les 30 secondes
+    app['websocket_max_msg_size'] = 10 * 1024 * 1024  # 10MB
     
     server = ClipboardServer(loop=loop)
     
@@ -305,12 +452,18 @@ async def create_app(loop=None):
     # Configuration des routes
     app.router.add_route('GET', '/ws', server.websocket_handler)
     app.router.add_route('GET', '/health', lambda req: web.json_response({'status': 'ok'}))
+    app.router.add_route('GET', '/hostname', server.handle_hostname)
     app.router.add_route('GET', '/', lambda req: web.json_response({
         'status': 'ok', 
         'message': 'Clipboard server running',
         'version': '1.0.0',
         'websocket_timeout': '300s',
-        'keepalive': 'enabled'
+        'keepalive': 'enabled',
+        'endpoints': {
+            'ws': '/ws',
+            'health': '/health',
+            'hostname': '/hostname'
+        }
     }))
     logger.info("🚀 Serveur HTTP WebSocket démarré sur http://0.0.0.0:24900")
     logger.info("📡 WebSocket endpoint: ws://0.0.0.0:24900/ws")

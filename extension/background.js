@@ -8,51 +8,58 @@ let socket = null;
 let isConnected = false;
 let reconnectAttempts = 0;
 let reconnectTimeout = null;
-let lastPingTime = 0;
 const PING_INTERVAL = 25000;
 let pingInterval = null;
+let machineId = ''; // Stocke l'ID de la machine attribué par le serveur
+let localMachineId = ''; // ID local pour cette instance du navigateur
 
-function updateHistory(content, source = 'local') {
+function updateHistory(content, source = 'local', machineId = '') {
   if (content && content.trim() !== '') {
     const timestamp = new Date().toISOString();
-    const newItem = { content, timestamp, source };
+    const newItem = { 
+      content, 
+      timestamp, 
+      source,
+      machine_id: machineId || localMachineId
+    };
 
-    if (source === 'local') {
-      if (clipboardHistory.length === 0 || clipboardHistory[0].content !== content) {
-        const exists = clipboardHistory.some(item => item.content === content);
-        if (!exists) {
-          clipboardHistory.unshift(newItem);
-          if (clipboardHistory.length > MAX_HISTORY) {
-            clipboardHistory = clipboardHistory.slice(0, MAX_HISTORY);
-          }
-          lastClipboardContent = content;
-          chrome.storage.local.set({ clipboardHistory }, () => {
-            console.log('[DEBUG] Historique mis à jour:', clipboardHistory);
-          });
-          try {
-            chrome.runtime.sendMessage({
-              type: 'clipboard_update',
-              history: clipboardHistory
-            }).catch(error => {
-              if (error.message !== 'Could not establish connection. Receiving end does not exist.') {
-                console.error('[ERREUR] Erreur lors de l\'envoi de la mise à jour au popup:', error);
-              }
-            });
-          } catch (e) {
-            console.error('[ERREUR] Erreur lors de l\'envoi de la mise à jour au popup:', e);
-          }
-          if (isConnected && socket && socket.readyState === WebSocket.OPEN) {
-            try {
-              socket.send(JSON.stringify({
-                type: 'clipboard_update',
-                content: content,
-                timestamp: timestamp,
-                source: 'local'
-              }));
-              console.log('[DEBUG] Mise à jour envoyée au serveur:', content);
-            } catch (e) {
-              console.error('[ERREUR] Erreur lors de l\'envoi au serveur:', e);
+    if (clipboardHistory.length === 0 || clipboardHistory[0].content !== content) {
+      const exists = clipboardHistory.some(item => item.content === content);
+      if (!exists) {
+        clipboardHistory.unshift(newItem);
+        if (clipboardHistory.length > MAX_HISTORY) {
+          clipboardHistory = clipboardHistory.slice(0, MAX_HISTORY);
+        }
+        lastClipboardContent = content;
+        chrome.storage.local.set({ clipboardHistory }, () => {
+          console.log('[DEBUG] Historique mis à jour:', clipboardHistory);
+        });
+        try {
+          chrome.runtime.sendMessage({
+            type: 'clipboard_update',
+            history: clipboardHistory
+          }).catch(error => {
+            if (error.message !== 'Could not establish connection. Receiving end does not exist.') {
+              console.error('[ERREUR] Erreur lors de l\'envoi de la mise à jour au popup:', error);
             }
+          });
+        } catch (e) {
+          console.error('[ERREUR] Erreur lors de l\'envoi de la mise à jour au popup:', e);
+        }
+        
+        // Envoyer la mise à jour au serveur si on est connecté
+        if (isConnected && socket && socket.readyState === WebSocket.OPEN) {
+          try {
+            socket.send(JSON.stringify({
+              type: 'clipboard_update',
+              content: content,
+              timestamp: timestamp,
+              source: 'local',
+              machine_id: localMachineId
+            }));
+            console.log('[DEBUG] Mise à jour envoyée au serveur:', content);
+          } catch (e) {
+            console.error('[ERREUR] Erreur lors de l\'envoi au serveur:', e);
           }
         }
       }
@@ -104,6 +111,8 @@ async function updateConnectionStatus(connected, message = '') {
   isConnected = connected;
 
   try {
+    // Sauvegarder l'état de connexion dans le stockage local
+    await chrome.storage.local.set({ isConnected: connected });
     await updateExtensionIcon(connected);
     console.log('[SUCCÈS] Mise à jour du statut terminée');
   } catch (error) {
@@ -128,6 +137,14 @@ async function updateConnectionStatus(connected, message = '') {
         statusMessage = `Connected to ${result.serverIp}:${result.serverPort}`;
       }
     }
+    
+    // Mettre à jour les informations de connexion dans le stockage local
+    chrome.storage.local.set({
+      isConnected: connected,
+      serverIp: result.serverIp,
+      serverPort: result.serverPort
+    });
+    
     sendStatusUpdate(connected, statusMessage);
   });
 }
@@ -160,114 +177,130 @@ function setupPing() {
   }, PING_INTERVAL);
 }
 
+// Configuration des paramètres de connexion
+const WS_RECONNECT_BASE_DELAY = 1000; // 1 seconde de base
+const WS_MAX_RECONNECT_ATTEMPTS = 10;
+const WS_PING_INTERVAL = 25000; // 25 secondes (moins que le timeout du serveur)
+const WS_CONNECTION_TIMEOUT = 10000; // 10 secondes de timeout de connexion
+
+function calculateReconnectDelay(attempt) {
+  // Backoff exponentiel avec un délai maximum de 30 secondes
+  return Math.min(WS_RECONNECT_BASE_DELAY * Math.pow(2, attempt), 30000);
+}
+
 function attemptWebSocketConnection(serverIp, serverPort) {
-  if (socket) {
-    socket.close();
-    socket = null;
-    console.log('[DEBUG] Previous WebSocket closed');
+  // Annuler toute tentative de reconnexion en cours
+  if (reconnectTimeout) {
+    clearTimeout(reconnectTimeout);
+    reconnectTimeout = null;
   }
 
+  // Fermer la connexion existante si elle existe
+  if (socket) {
+    try {
+      socket.close();
+    } catch (e) {
+      console.warn('[WS] Erreur lors de la fermeture de la connexion existante:', e);
+    }
+    socket = null;
+  }
+
+  // Sauvegarder les informations de connexion
   chrome.storage.local.set({ serverIp, serverPort }, () => {
-    console.log('[DEBUG] Informations de connexion sauvegardées:', { serverIp, serverPort });
+    console.log('[WS] Informations de connexion sauvegardées:', { serverIp, serverPort });
   });
 
   const wsUrl = `ws://${serverIp}:${serverPort}/ws`;
-  console.log('[DEBUG] Tentative de connexion WebSocket vers:', wsUrl);
+  console.log(`[WS] Tentative de connexion (${reconnectAttempts + 1}/${WS_MAX_RECONNECT_ATTEMPTS}):`, wsUrl);
 
   try {
     socket = new WebSocket(wsUrl);
-    reconnectAttempts = 0;
-
+    
+    // Configurer le timeout de connexion
     const connectionTimeout = setTimeout(() => {
       if (socket && socket.readyState === WebSocket.CONNECTING) {
-        console.error('[ERREUR] Délai de connexion WebSocket dépassé');
+        console.error('[WS] Délai de connexion WebSocket dépassé (10s)');
         socket.close();
-        updateConnectionStatus(false, 'Connection timeout');
         handleReconnection(serverIp, serverPort);
       }
-    }, 10000);
+    }, WS_CONNECTION_TIMEOUT);
 
     socket.onopen = () => {
       clearTimeout(connectionTimeout);
-      console.log('[SUCCÈS] Connexion WebSocket établie');
-      setupPing();
-      const statusMessage = `Connected to ${serverIp}:${serverPort}`;
-      updateConnectionStatus(true, statusMessage);
-      chrome.storage.local.set({ isConnected: true });
-      if (socket.readyState === WebSocket.OPEN) {
-        try {
-          socket.send(JSON.stringify({ type: 'get_history' }));
-          console.log('[DEBUG] Demande d\'historique envoyée');
-        } catch (e) {
-          console.error('[ERREUR] Erreur lors de la demande d\'historique:', e);
+      console.log('[WS] Connexion WebSocket établie avec succès');
+      isConnected = true;
+      reconnectAttempts = 0; // Réinitialiser le compteur de reconnexion
+      updateConnectionStatus(true, 'Connecté au serveur');
+      
+      // Démarrer le ping
+      if (pingInterval) clearInterval(pingInterval);
+      pingInterval = setInterval(() => {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          try {
+            socket.send(JSON.stringify({ type: 'ping', timestamp: Date.now() }));
+          } catch (e) {
+            console.error('[WS] Erreur lors de l\'envoi du ping:', e);
+          }
         }
-      }
+      }, WS_PING_INTERVAL);
+      
+      // Envoyer les informations du client
+      sendClientInfo();
     };
 
     socket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        console.log('[DEBUG] Message reçu du serveur:', data);
-
-        if (data.type === 'ping') {
-          socket.send(JSON.stringify({ type: 'pong', timestamp: data.timestamp }));
-          console.log('[DEBUG] Pong sent');
-          return;
-        }
-
-        if (data.type === 'clipboard_update') {
-          console.log('[DEBUG] Mise à jour du presse-papier reçue:', data.history?.length || 0, 'éléments');
-          if (data.history && Array.isArray(data.history)) {
-            data.history.forEach(item => {
-              updateHistory(item.content, 'server');
-            });
+        console.log('[WS] Message reçu:', data);
+        
+        // Traiter les différents types de messages
+        if (data.type === 'pong') {
+          // Mettre à jour le timestamp du dernier pong
+          lastPongTime = Date.now();
+        } else if (data.type === 'clipboard_update') {
+          // Vérifier si le message vient d'une autre machine
+          const isFromOtherMachine = data.machine_id && data.machine_id !== localMachineId;
+          
+          if (isFromOtherMachine) {
+            console.log(`[DEBUG] Mise à jour reçue d'une autre machine (${data.machine_id})`);
+            // Mettre à jour l'historique avec l'ID de la machine source
+            updateHistory(data.content, 'remote', data.machine_id);
           }
-          chrome.runtime.sendMessage(data).catch(error => {
-            if (error.message !== 'Could not establish connection. Receiving end does not exist.') {
-              console.error('[ERREUR] Error sending clipboard_update:', error);
-            }
-          });
-        } else if (data.type === 'heartbeat') {
-          console.log('[DEBUG] Heartbeat reçu du serveur:', data.message);
-          socket.send(JSON.stringify({
-            type: 'heartbeat_response',
-            timestamp: new Date().toISOString(),
-            message: 'Client is alive'
-          }));
-        } else {
-          console.log('[DEBUG] Autre type de message:', data.type);
+        } else if (data.type === 'client_id' && data.client_id) {
+          machineId = data.client_id;
+          console.log('[DEBUG] ID de machine reçu du serveur:', machineId);
         }
       } catch (e) {
-        console.error('[ERREUR] Erreur lors du traitement du message:', e);
+        console.error('[WS] Erreur lors du traitement du message:', e);
       }
     };
 
     socket.onclose = (event) => {
-      console.log('[DEBUG] Connexion WebSocket fermée:', event.code, event.reason);
-      isConnected = false;
       clearTimeout(connectionTimeout);
+      console.log(`[WS] Connexion fermée (code: ${event.code}, raison: ${event.reason || 'inconnue'})`);
+      isConnected = false;
+      
+      // Nettoyer
       if (pingInterval) {
         clearInterval(pingInterval);
         pingInterval = null;
-        console.log('[DEBUG] Ping interval cleared on close');
       }
-      if (event.code !== 1000) {
+      
+      // Tenter de se reconnecter si ce n'est pas une fermeture normale
+      if (event.code !== 1000) { // 1000 = fermeture normale
         handleReconnection(serverIp, serverPort);
       } else {
-        updateConnectionStatus(false, 'Disconnected from server');
+        updateConnectionStatus(false, 'Déconnecté');
       }
     };
-
+    
     socket.onerror = (error) => {
-      console.error('[ERREUR] Erreur WebSocket:', error);
       clearTimeout(connectionTimeout);
+      console.error('[WS] Erreur WebSocket:', error);
       isConnected = false;
-      if (pingInterval) {
-        clearInterval(pingInterval);
-        pingInterval = null;
-        console.log('[DEBUG] Ping interval cleared on error');
-      }
-      updateConnectionStatus(false, 'Connection error: ' + (error.message || 'Unknown error'));
+      updateConnectionStatus(false, 'Erreur de connexion');
+      
+      // Tenter de se reconnecter
       handleReconnection(serverIp, serverPort);
     };
   } catch (e) {
@@ -275,11 +308,19 @@ function attemptWebSocketConnection(serverIp, serverPort) {
     updateConnectionStatus(false, 'Connection failed: ' + (e.message || 'Unknown error'));
     handleReconnection(serverIp, serverPort);
   }
+  
+  // Vérifier si on doit se reconnecter automatiquement
+  chrome.storage.local.get(['isConnected', 'serverIp', 'serverPort'], (result) => {
+    if (result.isConnected && result.serverIp && result.serverPort) {
+      console.log('[DEBUG] Tentative de reconnexion automatique au serveur...');
+      attemptWebSocketConnection(result.serverIp, result.serverPort);
+    }
+  });
 }
 
 function handleReconnection(serverIp, serverPort) {
-  if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-    const errorMessage = `Failed to connect to ${serverIp}:${serverPort} after ${MAX_RECONNECT_ATTEMPTS} attempts`;
+  if (reconnectAttempts >= WS_MAX_RECONNECT_ATTEMPTS) {
+    const errorMessage = `Failed to connect to ${serverIp}:${serverPort} after ${WS_MAX_RECONNECT_ATTEMPTS} attempts`;
     console.error(`[ERREUR] ${errorMessage}`);
     updateConnectionStatus(false, errorMessage);
     return;
@@ -418,15 +459,66 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   return true;
 });
 
-async function checkClipboard() {
-  try {
-    if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.readText) {
-      const text = await navigator.clipboard.readText();
-      updateHistory(text, 'local');
+// La fonction checkClipboard n'est plus nécessaire ici car la détection est gérée par le content script
+function checkClipboard() {
+  // Cette fonction est maintenue pour la rétrocompatibilité
+  // mais ne fait plus rien car la détection est gérée par le content script
+}
+
+// Écouter les messages du content script
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  console.log('[DEBUG] Message reçu du content script:', { type: request.type, from: sender.url });
+  
+  if (request.type === 'CLIPBOARD_CHANGE') {
+    console.log('📋 [CLIPBOARD_CHANGE] Contenu reçu:', 
+      request.content ? request.content.substring(0, 50) + (request.content.length > 50 ? '...' : '') : 'vide',
+      `(longueur: ${request.content?.length || 0} caractères)`
+    );
+    
+    // Mettre à jour l'historique local
+    updateHistory(request.content, 'local');
+    
+    // Envoyer la mise à jour au serveur
+    if (isConnected && socket && socket.readyState === WebSocket.OPEN) {
+      try {
+        const message = {
+          type: 'clipboard_update',
+          content: request.content,
+          timestamp: new Date().toISOString(),
+          source: 'local',
+          machine_id: localMachineId,
+          url: request.url || 'unknown'
+        };
+        
+        console.log('📤 Envoi au serveur:', { 
+          type: message.type,
+          content_length: message.content?.length || 0,
+          machine_id: message.machine_id
+        });
+        
+        socket.send(JSON.stringify(message));
+      } catch (e) {
+        console.error('❌ Erreur lors de l\'envoi au serveur:', e);
+      }
     } else {
-      console.warn('[AVERTISSEMENT] Clipboard API not available in this context');
+      console.warn('⚠️ Non connecté au serveur. Impossible d\'envoyer la mise à jour.');
     }
-  } catch (error) {
-    console.error('[ERREUR] Erreur lors de la lecture du clipboard:', error);
+  }
+  
+  return true; // Garder le canal de messagerie ouvert pour les réponses asynchrones
+});
+
+// Fonction pour envoyer les informations du client
+function sendClientInfo() {
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    chrome.storage.local.get(['localHostname'], (result) => {
+      const hostname = result.localHostname || 'Local';
+      socket.send(JSON.stringify({
+        type: 'client_identify',
+        machine_id: localMachineId,
+        hostname: hostname,
+        user_agent: navigator.userAgent
+      }));
+    });
   }
 }
