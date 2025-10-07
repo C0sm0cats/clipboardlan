@@ -12,7 +12,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Update UI based on connection state
   async function updateStatus(message, success) {
     console.log(`Updating status: ${message} (${success ? 'connected' : 'disconnected'})`);
-    statusElement.textContent = message;
+    // Utiliser innerHTML pour permettre le HTML dans le message
+    statusElement.innerHTML = message;
+    // Toujours utiliser la classe 'disconnected' pour le texte noir
     statusElement.className = `status-badge ${success ? 'connected' : 'disconnected'}`;
     isConnected = success;
 
@@ -155,7 +157,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const serverInfo = `Connected to ${ip}${port ? ':' + port : ''}`;
         updateStatus(serverInfo, true);
       } else {
-        updateStatus('Enter Server IP & Port, then click Connect', false);
+        updateStatus('<span style="color: var(--text-color)">Enter Server IP & Port, then click Connect</span>', false);
       }
 
       // Load history
