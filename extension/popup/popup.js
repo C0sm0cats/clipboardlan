@@ -85,7 +85,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         itemDiv.innerHTML = `
           <div class="history-meta">
             <span>${new Date(item.timestamp).toLocaleString()}</span>
-            <span class="source-badge local" title="${isLocal ? 'Local' : 'Distant'}">
+            <span class="source-badge ${isLocal ? 'local' : 'server'}" title="${isLocal ? 'Local' : 'Distant'}">
               ${displayName}
             </span>
           </div>
@@ -215,7 +215,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         const serverInfo = `Connected to ${ip}${port ? ':' + port : ''}`;
         updateStatus(serverInfo, true);
       } else {
-        // Do not attempt auto-reconnect; show disconnected state
         updateStatus('<span style="color: var(--text-color)">Enter Server IP & Port, then click Connect</span>', false);
       }
 
@@ -341,7 +340,28 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   connectBtn.addEventListener('click', toggleConnection);
   document.getElementById('disconnectBtn')?.addEventListener('click', toggleConnection);
-  
+
+  // Clear History Button with Custom Dialog
+  const clearHistoryBtn = document.getElementById('clearHistoryBtn');
+  const clearHistoryDialog = document.getElementById('clearHistoryDialog');
+  const confirmClearBtn = document.getElementById('confirmClearBtn');
+  const cancelClearBtn = document.getElementById('cancelClearBtn');
+
+  clearHistoryBtn.addEventListener('click', () => {
+    clearHistoryDialog.classList.add('show');
+  });
+
+  confirmClearBtn.addEventListener('click', async () => {
+    await chrome.storage.local.set({ clipboardHistory: [] });
+    chrome.runtime.sendMessage({ type: 'CLEAR_HISTORY' });
+    updateHistory([]);
+    clearHistoryDialog.classList.remove('show');
+  });
+
+  cancelClearBtn.addEventListener('click', () => {
+    clearHistoryDialog.classList.remove('show');
+  });
+
   setInterval(async () => {
     try {
       if (navigator.clipboard && navigator.clipboard.readText) {

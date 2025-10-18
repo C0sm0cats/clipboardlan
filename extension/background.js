@@ -13,6 +13,14 @@ let pingInterval = null;
 let machineId = '';
 let localMachineId = '';
 
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'CLEAR_HISTORY') {
+    chrome.storage.local.set({ clipboardHistory: [] });
+    // Optionally notify server to clear history if applicable
+    sendResponse({ success: true });
+  }
+});
+
 async function detectLocalIP() {
   return new Promise((resolve) => {
     const pc = new RTCPeerConnection({ iceServers: [] });
