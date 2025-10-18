@@ -27,7 +27,7 @@
 
     body {
       width: 360px;
-      max-height: 600px;
+      max-height: 850px; /* Increased from 820px to accommodate disconnected state */
       overflow-y: auto;
       font-family: var(--font-sans);
       background-color: var(--bg-color);
@@ -39,15 +39,15 @@
     }
 
     .container {
-      padding: 16px;
+      padding: 12px;
     }
 
     .header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 16px;
-      padding-bottom: 12px;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
       border-bottom: 1px solid var(--border-color);
     }
     
@@ -56,9 +56,9 @@
     }
     
     .status-badge {
-      font-size: 12px;
+      font-size: 11px;
       color: var(--text-light);
-      margin-top: 4px;
+      margin-top: 2px;
       display: block;
     }
     
@@ -71,18 +71,18 @@
     }
 
     .header h1 {
-      font-size: 16px;
+      font-size: 15px;
       font-weight: 600;
       color: var(--text-color);
-      margin: 0 0 4px 0;
+      margin: 0 0 2px 0;
       letter-spacing: 0.5px;
     }
 
     .input-group {
       background: var(--card-bg);
       border-radius: 6px;
-      padding: 0 12px 8px 12px;
-      margin-bottom: 12px;
+      padding: 0 10px 6px 10px;
+      margin-bottom: 10px;
       box-shadow: var(--shadow);
       border: 1px solid var(--border-color);
     }
@@ -90,7 +90,7 @@
     .form-row {
       display: flex;
       align-items: center;
-      margin: 10px 0 0 0;
+      margin: 8px 0 0 0;
     }
 
     .form-row:last-child {
@@ -99,20 +99,20 @@
 
     label {
       width: 80px;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 500;
       color: var(--text-color);
-      margin-right: 10px;
+      margin-right: 8px;
       flex-shrink: 0;
     }
 
     input[type="text"] {
       flex: 1;
-      padding: 8px 12px;
+      padding: 6px 10px;
       background: var(--card-bg);
       border: 1px solid var(--border-color);
       border-radius: 4px;
-      font-size: 13px;
+      font-size: 12px;
       color: var(--text-color);
       transition: border-color 0.2s;
       min-width: 0;
@@ -129,26 +129,26 @@
       color: white;
       border: none;
       border-radius: 4px;
-      padding: 6px 12px;
-      font-size: 12px;
+      padding: 5px 10px;
+      font-size: 11px;
       font-weight: 500;
       cursor: pointer;
       transition: all 0.2s;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 6px;
+      gap: 5px;
       white-space: nowrap;
     }
     
     #connectBtn {
       width: 100%;
-      margin-top: 10px;
+      margin-top: 8px;
     }
     
     #disconnectBtn {
       background: var(--primary-color);
-      margin-left: 10px;
+      margin-left: 8px;
     }
     
     #disconnectBtn:hover {
@@ -169,14 +169,14 @@
     }
 
     button svg {
-      width: 16px;
-      height: 16px;
+      width: 14px;
+      height: 14px;
     }
 
     #status {
-      font-size: 12px;
-      padding: 2px 8px;
-      border-radius: 10px;
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 8px;
     }
 
     .history-container {
@@ -185,11 +185,11 @@
       box-shadow: var(--shadow);
       overflow: hidden;
       border: 1px solid var(--border-color);
-      max-height: 400px;
+      max-height: 550px; /* Increased from 520px to fit three items in disconnected state */
     }
 
     .history-header {
-      padding: 12px 16px;
+      padding: 10px 14px;
       border-bottom: 1px solid var(--border-color);
       display: flex;
       justify-content: space-between;
@@ -198,20 +198,24 @@
     }
 
     .history-header h2 {
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 600;
       color: var(--text-color);
     }
 
     .history-content {
-      max-height: 300px;
+      max-height: 480px; /* Increased from 450px to ensure three items are visible */
       overflow-y: auto;
     }
 
     .history-item {
-      padding: 12px 16px;
+      padding: 6px 10px; /* Reduced from 8px 12px to make items more compact */
       border-bottom: 1px solid var(--border-color);
       transition: background-color 0.2s;
+      margin: 4px 0; /* Reduced from 5px 0 */
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      background: var(--card-bg);
     }
 
     .history-item:last-child {
@@ -220,33 +224,36 @@
 
     .history-item:hover {
       background-color: rgba(0, 0, 0, 0.02);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     }
 
     .history-meta {
       display: flex;
       justify-content: space-between;
-      font-size: 11px;
+      font-size: 10px;
       color: var(--text-light);
-      margin-bottom: 4px;
+      margin-bottom: 2px; /* Reduced from 3px */
     }
 
     .history-content-text {
       font-size: 12px;
       white-space: pre-wrap;
       word-break: break-word;
-      margin: 6px 0;
-      line-height: 1.5;
+      margin: 4px 0; /* Reduced from 5px 0 */
+      line-height: 1.4;
+      max-height: 36px; /* Added to cap long text */
+      overflow: hidden;
     }
 
     .history-actions {
       display: flex;
       justify-content: flex-end;
-      gap: 8px;
+      gap: 5px; /* Reduced from 6px */
     }
 
     .btn {
-      padding: 4px 10px;
-      font-size: 12px;
+      padding: 3px 8px;
+      font-size: 11px;
       border-radius: 4px;
       border: 1px solid var(--border-color);
       background: white;
@@ -267,10 +274,10 @@
 
     .status-indicator {
       display: inline-block;
-      width: 10px;
-      height: 10px;
+      width: 8px;
+      height: 8px;
       border-radius: 50%;
-      margin-right: 5px;
+      margin-right: 4px;
       vertical-align: middle;
     }
     .status-indicator.connected {
@@ -279,39 +286,15 @@
     .status-indicator.disconnected {
       background-color: var(--danger-color);
     }
-    .history-item {
-      margin: 10px 0;
-      padding: 10px;
-      border: 1px solid var(--border-color);
-      border-radius: 4px;
-      background: var(--card-bg);
-    }
-    .history-item:hover {
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    }
-    .history-meta {
-      font-size: 11px;
-      color: var(--text-light);
-      margin-bottom: 4px;
-      display: flex;
-      justify-content: space-between;
-    }
-    .history-content-text {
-      word-break: break-word;
-      margin: 8px 0;
-      font-size: 13px;
-    }
-    .history-actions {
-      text-align: right;
-    }
+
     .copy-btn {
       background: transparent;
       color: var(--primary-color);
       border: 1px solid var(--primary-color);
       border-radius: 4px;
-      padding: 4px 10px;
-      font-size: 11px;
-      font-family: var(--font-mono);
+      padding: 3px 8px;
+      font-size: 10px;
+      font-family: var(--font-sans);
       cursor: pointer;
       transition: all 0.25s cubic-bezier(0.645, 0.045, 0.355, 1);
       position: relative;
@@ -341,18 +324,23 @@
     .source-badge {
       background-color: #e3f0ff;
       color: #1677ff;
-      padding: 2px 8px;
+      padding: 2px 6px;
       border-radius: 4px;
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 500;
-      margin-left: 4px;
+      margin-left: 3px;
       border: 1px solid #91caff;
     }
+    .source-badge.server {
+      background-color: #f6ffed;
+      color: #52c41a;
+      border-color: #b7eb8f;
+    }
     .empty-state {
-      padding: 24px 16px;
+      padding: 20px 14px;
       text-align: center;
       color: var(--text-light);
-      font-size: 13px;
+      font-size: 12px;
     }
 
     .flex {
@@ -361,24 +349,6 @@
 
     .flex-1 {
       flex: 1;
-    }
-
-    /* Styles unifiés pour tous les badges source */
-    .source-badge {
-      background-color: #e3f0ff;
-      color: #1677ff;
-      padding: 2px 8px;
-      border-radius: 4px;
-      font-size: 11px;
-      font-weight: 500;
-      margin-left: 4px;
-      border: 1px solid #91caff;
-    }
-    
-    .source-badge.server {
-      background-color: #f6ffed;
-      color: #52c41a;
-      border-color: #b7eb8f;
     }
   </style>
 </head>

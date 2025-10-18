@@ -12,22 +12,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Update UI based on connection state
   async function updateStatus(message, success) {
     console.log(`Updating status: ${message} (${success ? 'connected' : 'disconnected'})`);
-    // Utiliser innerHTML pour permettre le HTML dans le message
     statusElement.innerHTML = message;
-    // Toujours utiliser la classe 'disconnected' pour le texte noir
     statusElement.className = `status-badge ${success ? 'connected' : 'disconnected'}`;
     isConnected = success;
 
-    // Show/hide form elements
     const formDisplay = success ? 'none' : 'flex';
     const disconnectBtn = document.getElementById('disconnectBtn');
     
-    // Toggle form elements
     serverIpInput.closest('.form-row').style.display = formDisplay;
     serverPortInput.closest('.form-row').style.display = formDisplay;
     connectBtn.style.display = success ? 'none' : 'flex';
     
-    // Toggle disconnect button
     if (disconnectBtn) {
       disconnectBtn.style.display = success ? 'flex' : 'none';
     }
@@ -50,37 +45,41 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    const sortedHistory = [...history].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    // Deduplicate history based on content only
+    const uniqueHistory = [];
+    const seenContent = new Set();
+    for (const item of history) {
+      if (!seenContent.has(item.content)) {
+        seenContent.add(item.content);
+        uniqueHistory.push(item);
+      }
+    }
+
+    const sortedHistory = uniqueHistory.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     const recentItems = sortedHistory.slice(0, 3);
 
-    // Récupérer l'ID de la machine locale et le nom d'hôte
     chrome.storage.local.get(['localMachineId', 'localHostname'], function(result) {
       const localMachineId = result.localMachineId || '';
       let localHostname = result.localHostname || 'Local';
       
-      // Si pas de nom d'hôte défini, essayer de le récupérer
       if (!result.localHostname) {
         fetch('http://localhost:24900/hostname')
           .then(response => response.ok ? response.json() : {})
           .then(data => {
             const newHostname = data.hostname || 'Local';
             chrome.storage.local.set({ localHostname: newHostname });
-            // Mettre à jour l'interface avec le nouveau nom d'hôte
-            updateHistory(history);
+            updateHistory(uniqueHistory);
           })
           .catch(console.error);
       }
 
-      // Afficher les éléments d'historique
       recentItems.forEach(item => {
         const itemDiv = document.createElement('div');
         itemDiv.className = 'history-item';
         
-        // Déterminer si l'élément vient de la machine locale ou distante
         const isLocal = item.machine_id === localMachineId || item.source === 'local';
         let displayName = isLocal ? localHostname : (item.hostname || `Machine: ${item.machine_id ? item.machine_id.substring(0, 8) : 'Inconnue'}`);
         
-        // S'assurer que le nom d'affichage n'est jamais vide
         displayName = displayName || 'Local';
         
         itemDiv.innerHTML = `
@@ -98,7 +97,6 @@ document.addEventListener('DOMContentLoaded', async () => {
           </div>
         `;
         
-        // Ajouter l'écouteur d'événement pour le bouton de copie
         const copyBtn = itemDiv.querySelector('.copy-btn');
         if (copyBtn) {
           copyBtn.addEventListener('click', async (e) => {
@@ -132,11 +130,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     return div.innerHTML;
   }
 
-  function loadHistory() {
-    chrome.runtime.sendMessage({ type: 'GET_HISTORY' }, response => {
-      if (response && response.history) {
-        updateHistory(response.history);
-      }
+  async function loadHistory() {
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage({ type: 'GET_SERVER_HISTORY' }, response => {
+        if (response && response.history) {
+          updateHistory(response.history);
+          chrome.storage.local.set({ clipboardHistory: response.history });
+          resolve(response.history);
+        } else {
+          console.error('Failed to load server history:', response);
+          chrome.storage.local.get(['clipboardHistory'], (result) => {
+            const localHistory = result.clipboardHistory || [];
+            updateHistory(localHistory);
+            resolve(localHistory);
+          });
+        }
+      });
     });
   }
 
@@ -144,19 +153,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     return new Promise((resolve) => {
       console.log('Checking connection status...');
       
-      // D'abord vérifier l'état stocké localement
       chrome.storage.local.get(['isConnected', 'serverIp', 'serverPort', 'lastConnection'], (savedState) => {
         console.log('Saved connection state:', savedState);
         
-        // Vérifier si la dernière connexion est récente (moins de 5 minutes)
         const isRecentlyConnected = savedState.lastConnection && 
           (Date.now() - new Date(savedState.lastConnection).getTime() < 5 * 60 * 1000);
         
-        // Ensuite vérifier l'état actuel du service worker
         chrome.runtime.sendMessage({ type: 'GET_CONNECTION_STATUS' }, (response) => {
           if (chrome.runtime.lastError) {
             console.error('Error getting connection status:', chrome.runtime.lastError);
-            // En cas d'erreur, on se base sur l'état stocké et la récence
             resolve({
               connected: savedState.isConnected === true && isRecentlyConnected,
               serverIp: savedState.serverIp,
@@ -164,7 +169,6 @@ document.addEventListener('DOMContentLoaded', async () => {
               fromCache: true
             });
           } else {
-            // Mettre à jour l'état stocké si nécessaire
             const isConnected = (response && response.connected) || false;
             if (isConnected) {
               chrome.storage.local.set({
@@ -188,50 +192,33 @@ document.addEventListener('DOMContentLoaded', async () => {
   async function init() {
     console.log('Initializing popup...');
     try {
-      // Load saved state
       const savedState = await new Promise(resolve => {
         chrome.storage.local.get(['isConnected', 'serverIp', 'serverPort', 'localMachineId'], resolve);
       });
       console.log('Saved state from storage:', savedState);
 
-      // Populate input fields
       serverIpInput.value = savedState.serverIp || '';
       serverPortInput.value = savedState.serverPort || '';
 
-      // Vérifier si nous avons un ID de machine locale, sinon en générer un
       if (!savedState.localMachineId) {
         const newMachineId = 'browser_' + Math.random().toString(36).substr(2, 9);
         await chrome.storage.local.set({ localMachineId: newMachineId });
-        console.log('[DEBUG] Nouvel ID de machine locale généré:', newMachineId);
+        console.log('[DEBUG] New local machine ID generated:', newMachineId);
       }
 
-      // Mettre à jour l'état de connexion
-      if (savedState.isConnected) {
-        // Si nous étions connectés, vérifier la connexion actuelle
-        const connectionStatus = await checkConnectionStatus();
-        console.log('Real-time connection status:', connectionStatus);
-        
-        if (connectionStatus.connected) {
-          // Toujours connecté, mettre à jour l'interface
-          const ip = savedState.serverIp || 'server';
-          const port = savedState.serverPort || '';
-          const serverInfo = `Connected to ${ip}${port ? ':' + port : ''}`;
-          updateStatus(serverInfo, true);
-        } else {
-          // Tentative de reconnexion automatique
-          if (savedState.serverIp && savedState.serverPort) {
-            console.log('[DEBUG] Tentative de reconnexion automatique...');
-            await toggleConnection();
-          } else {
-            updateStatus('<span style="color: var(--text-color)">Enter Server IP & Port, then click Connect</span>', false);
-          }
-        }
+      const connectionStatus = await checkConnectionStatus();
+      console.log('Real-time connection status:', connectionStatus);
+      
+      if (connectionStatus.connected) {
+        const ip = savedState.serverIp || 'server';
+        const port = savedState.serverPort || '';
+        const serverInfo = `Connected to ${ip}${port ? ':' + port : ''}`;
+        updateStatus(serverInfo, true);
       } else {
-        // Non connecté, afficher le formulaire
+        // Do not attempt auto-reconnect; show disconnected state
         updateStatus('<span style="color: var(--text-color)">Enter Server IP & Port, then click Connect</span>', false);
       }
 
-      // Charger l'historique
       await loadHistory();
       
     } catch (error) {
@@ -248,7 +235,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const now = new Date().toISOString();
 
     if (isConnected) {
-      // Déconnexion
       try {
         updateStatus('Disconnecting...', false);
         
@@ -281,18 +267,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       } catch (error) {
         console.error('Error disconnecting:', error);
         updateStatus(`Error disconnecting: ${error.message}`, false);
-        // Forcer la mise à jour de l'état en cas d'erreur
         await chrome.storage.local.set({
           isConnected: false,
           lastDisconnection: now
         });
       }
     } else {
-      // Connexion
       updateStatus('Connecting to server...', false);
       
       try {
-        // Sauvegarder les paramètres de connexion avant de tenter de se connecter
         await chrome.storage.local.set({
           serverIp,
           serverPort,
@@ -318,7 +301,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
 
         if (response && response.success) {
-          // Mettre à jour l'état de connexion avec la date/heure actuelle
           await chrome.storage.local.set({
             isConnected: true,
             lastConnection: now,
@@ -328,6 +310,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           isConnected = true;
           updateStatus(`Connected to ${serverIp}:${serverPort}`, true);
           console.log('Successfully connected to server');
+          await loadHistory();
         } else {
           throw new Error(response?.error || `Failed to connect to ${serverIp}:${serverPort}`);
         }
@@ -354,14 +337,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Initialize
   init();
 
-  // Event listeners
   connectBtn.addEventListener('click', toggleConnection);
   document.getElementById('disconnectBtn')?.addEventListener('click', toggleConnection);
   
-  // Clipboard monitoring
   setInterval(async () => {
     try {
       if (navigator.clipboard && navigator.clipboard.readText) {
@@ -383,7 +363,5 @@ document.addEventListener('DOMContentLoaded', async () => {
     }).catch(console.error);
   }
 
-  // Start initialization
-  await init();
   console.log('Popup initialized');
 });
