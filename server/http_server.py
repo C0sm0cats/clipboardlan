@@ -79,7 +79,7 @@ class ClipboardServer:
         except Exception as e:
             logger.error(f"❌ Erreur dans la boucle principale: {e}", exc_info=True)
 
-    async def broadcast_update(self, origin_machine_id=None, origin_hostname=None):  # CHANGED: Add origin_hostname
+    async def broadcast_update(self, origin_machine_id=None, origin_hostname=None):
         """Diffuse la mise à jour du presse-papiers à tous les clients."""
         if not self.clipboard_content:
             logger.debug("Aucun contenu à diffuser")
@@ -101,13 +101,10 @@ class ClipboardServer:
             message = {
                 'type': 'clipboard_update',
                 'content': self.clipboard_content,
-                'machine_id': origin_machine_id,  # NEW: Include for client check
-                'hostname': origin_hostname,  # NEW: Include for display
+                'machine_id': origin_machine_id,  # Correct parameter name
+                'hostname': origin_hostname,
                 'history': history_to_send
             }
-
-            if origin_client_id:
-                message['origin_machine_id'] = origin_client_id
 
             clients_to_remove = set()
             send_tasks = []
@@ -133,7 +130,6 @@ class ClipboardServer:
             if send_tasks:
                 await asyncio.gather(*send_tasks, return_exceptions=True)
 
-            # Nettoyer les clients déconnectés
             for cid in clients_to_remove:
                 self.clients.pop(cid, None)
                 self.client_info.pop(cid, None)
