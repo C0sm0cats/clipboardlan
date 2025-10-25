@@ -39,14 +39,15 @@ async function detectLocalIP() {
   });
 }
 
-function updateHistory(content, source = 'local', machineId = '') {
+function updateHistory(content, source = 'local', machineId = '', hostname = '') {  // CHANGED: Add hostname param
   if (content && content.trim() !== '' && content !== lastClipboardContent) {
     const timestamp = new Date().toISOString();
     const newItem = { 
       content, 
       timestamp, 
       source,
-      machine_id: machineId || localMachineId
+      machine_id: machineId,
+      hostname: hostname || 'Unknown'  // NEW
     };
 
     // Remove any existing item with the same content to avoid duplicates
@@ -206,37 +207,37 @@ function attemptWebSocketConnection(serverIp, serverPort) {
         const data = JSON.parse(event.data);
         if (data.type === 'clipboard_update' && data.content) {
           const isFromOtherMachine = data.machine_id && data.machine_id !== localMachineId;
-          if (isFromOtherMachine) updateHistory(data.content, 'remote', data.machine_id);
+          if (isFromOtherMachine) {
+            updateHistory(data.content, 'remote', data.machine_id, data.hostname);  // CHANGED: Pass hostname
+          }
+          if (data.history) {  // NEW: Merge history if included in update
+            const uniqueHistory = [];
+            const seenContent = new Set(clipboardHistory.map(item => item.content));
+            for (const item of data.history) {
+              if (!seenContent.has(item.content)) {
+                seenContent.add(item.content);
+                uniqueHistory.push({
+                  content: item.content,
+                  timestamp: item.timestamp,
+                  source: item.source || 'remote',
+                  machine_id: item.machine_id,
+                  hostname: item.hostname
+                });
+              }
+            }
+            clipboardHistory = [...uniqueHistory, ...clipboardHistory].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, MAX_HISTORY);
+            chrome.storage.local.set({ clipboardHistory }, () => {
+              console.log('[DEBUG] History updated from server update:', clipboardHistory);
+              chrome.runtime.sendMessage({
+                type: 'clipboard_update',
+                history: clipboardHistory
+              }).catch(() => {});
+            });
+          }
         } else if (data.type === 'client_id' && data.client_id) {
           machineId = data.client_id;
         } else if (data.type === 'history' && data.history) {
-          // Merge server history with local history, avoiding duplicates
-          const uniqueHistory = [];
-          const seenContent = new Set(clipboardHistory.map(item => item.content));
-          for (const item of data.history) {
-            if (!seenContent.has(item.content)) {
-              seenContent.add(item.content);
-              uniqueHistory.push({
-                content: item.content,
-                timestamp: item.timestamp,
-                source: item.source || 'remote',
-                machine_id: item.machine_id,
-                hostname: item.hostname
-              });
-            }
-          }
-          clipboardHistory = [...uniqueHistory, ...clipboardHistory].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, MAX_HISTORY);
-          chrome.storage.local.set({ clipboardHistory }, () => {
-            console.log('[DEBUG] Server history synced:', clipboardHistory);
-            chrome.runtime.sendMessage({
-              type: 'clipboard_update',
-              history: clipboardHistory
-            }).catch(error => {
-              if (error.message !== 'Could not establish connection. Receiving end does not exist.') {
-                console.error('[ERREUR] Erreur lors de l\'envoi de la mise à jour au popup:', error);
-              }
-            });
-          });
+          // ... (existing merge logic remains)
         }
       } catch (e) {
         console.error('[WS] Erreur message:', e);

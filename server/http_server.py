@@ -79,7 +79,7 @@ class ClipboardServer:
         except Exception as e:
             logger.error(f"❌ Erreur dans la boucle principale: {e}", exc_info=True)
 
-    async def broadcast_update(self, origin_client_id=None):
+    async def broadcast_update(self, origin_machine_id=None, origin_hostname=None):  # CHANGED: Add origin_hostname
         """Diffuse la mise à jour du presse-papiers à tous les clients."""
         if not self.clipboard_content:
             logger.debug("Aucun contenu à diffuser")
@@ -101,6 +101,8 @@ class ClipboardServer:
             message = {
                 'type': 'clipboard_update',
                 'content': self.clipboard_content,
+                'machine_id': origin_machine_id,  # NEW: Include for client check
+                'hostname': origin_hostname,  # NEW: Include for display
                 'history': history_to_send
             }
 
@@ -189,7 +191,6 @@ class ClipboardServer:
         return ws
 
     async def _handle_websocket_message(self, ws, msg, client_id):
-        """Traite un message WebSocket entrant."""
         try:
             data = json.loads(msg.data)
             msg_type = data.get('type')
@@ -207,26 +208,45 @@ class ClipboardServer:
                 })
 
             elif msg_type == 'clipboard_update':
-                await self._process_clipboard_update(data, self.client_info[client_id]['ip'])
+                await self._process_clipboard_update(data, client_id)
+
+            elif msg_type == 'get_history':  # NEW: Handle get_history
+                history_to_send = []
+                for item in self.history:
+                    ts = item.get('timestamp')
+                    ts_str = ts.isoformat() if hasattr(ts, 'isoformat') else str(ts)
+                    history_to_send.append({
+                        'content': item.get('content', ''),
+                        'timestamp': ts_str,
+                        'machine_id': item.get('machine_id', 'unknown'),
+                        'hostname': item.get('hostname', 'Unknown'),
+                        'source': item.get('source', 'unknown')
+                    })
+                await ws.send_json({
+                    'type': 'history',
+                    'history': history_to_send
+                })
+                logger.info(f"📜 Historique envoyé à {client_id[:8]}")
 
         except json.JSONDecodeError:
             logger.warning(f"⚠️ Message JSON invalide de {client_id[:8]}")
         except Exception as e:
             logger.error(f"❌ Erreur traitement message: {e}", exc_info=True)
 
-    async def _process_clipboard_update(self, data, remote):
+    async def _process_clipboard_update(self, data, client_id):  # CHANGED: Pass client_id instead of remote
         """Met à jour le presse-papiers et diffuse."""
         try:
             content = data.get('content')
             if not content:
-                logger.debug(f"⚠️ Mise à jour sans contenu de {remote}")
+                logger.debug(f"⚠️ Mise à jour sans contenu de {client_id[:8]}")
                 return
 
+            remote = self.client_info[client_id]['ip']
             new_item = {
                 'content': content,
                 'timestamp': datetime.now().isoformat(),
-                'machine_id': data.get('machine_id', 'unknown'),
-                'hostname': data.get('hostname', 'Unknown'),
+                'machine_id': data.get('machine_id', self.client_info[client_id].get('machine_id', 'unknown')),
+                'hostname': self.client_info[client_id].get('hostname', 'Unknown'),  # CHANGED: Lookup from client_info
                 'source': 'remote',
                 'remote': remote
             }
@@ -235,7 +255,7 @@ class ClipboardServer:
             self.history.insert(0, new_item)
             self.history = self.history[:self.max_history]
 
-            await self.broadcast_update()
+            await self.broadcast_update(new_item['machine_id'], new_item['hostname'])  # CHANGED: Pass origins
             logger.info(f"📋 Presse-papiers mis à jour par {new_item['hostname']} ({remote})")
 
         except Exception as e:
