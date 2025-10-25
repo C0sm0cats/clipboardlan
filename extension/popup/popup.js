@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const connectBtn = document.getElementById('connectBtn');
   const historyDiv = document.getElementById('history');
   let isConnected = false;
+  const contentMap = new Map(); // NEW: Map to store raw content by ID
 
   // Update UI based on connection state
   async function updateStatus(message, success) {
@@ -39,6 +40,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   function updateHistory(history) {
     console.log('Updating history in popup:', history);
     historyDiv.innerHTML = '';
+    contentMap.clear(); // NEW: Clear previous content
 
     if (!history || history.length === 0) {
       historyDiv.innerHTML = '<div class="empty-state">No clipboard history available</div>';
@@ -73,7 +75,10 @@ document.addEventListener('DOMContentLoaded', async () => {
           .catch(console.error);
       }
 
-      recentItems.forEach(item => {
+      recentItems.forEach((item, index) => {
+        const itemId = `history-item-${index}-${Date.now()}`; // NEW: Unique ID for each item
+        contentMap.set(itemId, item.content); // NEW: Store raw content in map
+
         const itemDiv = document.createElement('div');
         itemDiv.className = 'history-item';
         
@@ -93,28 +98,34 @@ document.addEventListener('DOMContentLoaded', async () => {
             ${truncateText(escapeHtml(item.content))}
           </div>
           <div class="history-actions">
-            <button class="copy-btn" data-content="${escapeHtml(item.content)}">Copy</button>
+            <button class="copy-btn" data-item-id="${itemId}">Copy</button>
           </div>
         `;
         
         const copyBtn = itemDiv.querySelector('.copy-btn');
         if (copyBtn) {
           copyBtn.addEventListener('click', async (e) => {
-            const content = e.target.getAttribute('data-content');
-            try {
-              await navigator.clipboard.writeText(content);
-              const originalText = e.target.textContent;
-              e.target.textContent = 'Copied!';
-              e.target.style.backgroundColor = '#28a745';
-              setTimeout(() => {
-                if (e.target) {
-                  e.target.textContent = originalText;
-                  e.target.style.backgroundColor = '';
-                }
-              }, 1500);
-            } catch (error) {
-              console.error('Failed to copy text:', error);
-              updateStatus('Error copying to clipboard', false);
+            const itemId = e.target.getAttribute('data-item-id');
+            const content = contentMap.get(itemId); // NEW: Retrieve raw content
+            if (content) {
+              try {
+                await navigator.clipboard.writeText(content);
+                const originalText = e.target.textContent;
+                e.target.textContent = 'Copied!';
+                e.target.style.backgroundColor = '#28a745';
+                setTimeout(() => {
+                  if (e.target) {
+                    e.target.textContent = originalText;
+                    e.target.style.backgroundColor = '';
+                  }
+                }, 1500);
+              } catch (error) {
+                console.error('Failed to copy text:', error);
+                updateStatus('Error copying to clipboard', false);
+              }
+            } else {
+              console.error('Content not found for itemId:', itemId);
+              updateStatus('Error: Content not found', false);
             }
           });
         }
